@@ -4,7 +4,7 @@ import scipy.constants as constants
 
 import matplotlib as mpl
 from matplotlib.animation import FuncAnimation
-from IPython.display import Image, HTML
+from IPython.display import HTML
 
 import matplotlib.patches as patches
 import matplotlib.transforms as transforms
@@ -40,8 +40,6 @@ alphaDot = 0 #intial change in angle of attack [rad/s]
 
 c1 = np.pi/2
 c2 = np.pi
-
-epsilon = 0.00000002 
 
 
 coefficient_matrix = np.array([
@@ -91,9 +89,6 @@ t90ccw = np.array([
 def Re_get(v):
     return np.linalg.norm(v)*L*rhoF/mu
 
-def rot_Re_get(omega):
-    return rhoF*omega*(L/2)**2/mu
-
 
 def dragCoeff0_get(Reynold):
     return 0.023+5.45/(Reynold**0.58-0.80)
@@ -111,6 +106,9 @@ def dragCoeff90_get(Reynold):
         return 3.05 + 5.0/(0.045*Reynold**0.80)
 
 def dragCoeff_unsteady_get(alpha, alphaDot, Reynold):
+    if alphaDot < 0.0002:
+        return dragCoeff_steady_get(alpha, Reynold)
+    
     a2 = np.pi / (2*np.abs(alphaDot))
     a1 = a2**0.5
     dragCoeff0 = dragCoeff0_get(Reynold)
@@ -127,11 +125,6 @@ def dragCoeff_steady_get(alpha, Reynold):
     dragCoeff_steady = dragCoeff0+(dragCoeff90 -dragCoeff0)*(np.sin(np.abs(alpha)))**3
 
     return dragCoeff_steady
-
-
-def DRCoeff_get(rotReynold, constant):
-    DRCoeff = constant/((1 if rotReynold > 0 else -1)*(abs(rotReynold)**0.2+epsilon))
-    return DRCoeff
 
 
 def sign_cp_fcn(theta ,v):
@@ -228,7 +221,6 @@ while t < t_end:
 
     #Reynold
     Reynold = Re_get(v)
-    rotReynold = rot_Re_get(omega)
 
     #drag coefficient
     if abs(alphaDot) > np.pi/2:
@@ -273,6 +265,7 @@ while t < t_end:
     #C = np.array([[0.0731 , 0], [0, 17.3]]) #added mass coefficient matrix
     C = np.array([[0, 0], [0, 0]]) #added mass coefficient matrix
     Ma = C*rhoF*V #added mass matrix
+    
     M = np.identity(2)*m #total mass matrix
     a_local = np.linalg.solve(M+Ma, tToLocal@(dragF + liftF + gravityF + buoyancyF)) #accele . in local coordinates
     a_global = tToGlobal@a_local #accele . in global coordinates
@@ -295,7 +288,6 @@ while t < t_end:
 
     T_offset = np.linalg.det([cp, dragF+liftF]) #calc . torque aerodyn . forces
 
-    #DRCoeff = DRCoeff_get(rotReynold, 1.46)
     DRCoeff = 2
     T_resist = -rhoF*DRCoeff*omega*abs(omega)*(1/4)*(L/2)**4 #calculate torque resistance
 
@@ -328,9 +320,12 @@ while t < t_end:
     i += 1
 
 
+xmax, xmin = max(pos_vec[:,0]/L+1), min(pos_vec[:,0]/L-1) 
+ymax, ymin = max(pos_vec[:,1]/L+1), min(pos_vec[:,1]/L-1)
+ 
 plt.plot(pos_vec[:,0]/L, pos_vec[:,1]/L)     # The marker shows the path points
-plt.xlim(-4, 5)
-plt.ylim(-14, 1)
+plt.xlim(xmin, xmax)
+plt.ylim(ymin, ymax)
 plt.xlabel('X-axis')
 plt.ylabel('Y-axis')
 plt.title('2D Path on Coordinate Plane')
@@ -351,14 +346,16 @@ mpl.use('Agg')
 
 num_frames = len(t_vec)//50
 
+
+
 # Setup plot
 fig, ax = plt.subplots()
 line, = ax.plot([], [], 'r-') # Added color for visibility
 ax.set(xlabel='X-axis', ylabel='Y-axis', title='Animated 2D Path')
 ax.grid(True)
 # Set axis limits to prevent them from changing dynamically
-ax.set_xlim(-4, 5)
-ax.set_ylim(-14, 1)
+ax.set_xlim(xmin, xmax)
+ax.set_ylim(ymin, ymax)
 
 # Animation function
 def update(frame):
@@ -366,12 +363,26 @@ def update(frame):
     # Return the artist as a sequence (a single-element tuple)
     return (line,)
 
+iteration = 0
+
+while True:
+    animation_dir = 'fall'+str(iteration)+'.gif'
+    if os.path.exists(animation_dir):
+        iteration+=1
+    else:
+        break
+
+
 # Create, save, and display the animation
+aniSimp_dir = 'fall'+str(iteration)+'.gif'
+
 ani = FuncAnimation(fig, update, frames=num_frames, blit=True)
 HTML(ani.to_jshtml())
 
-ani.save('fall.gif', writer='pillow', fps=60)
-Image(filename='fall.gif')
+ani.save(aniSimp_dir, writer='pillow', fps=60)
+#Image(filename='fall.gif')
+
+
 
 frames_dir = "animation_frames"
 if not os.path.exists(frames_dir):
@@ -387,8 +398,8 @@ print(f"Generating {frames_count} frames...")
 # -- Step 1: Generate and Save Each Frame --
 for frame_num in range(frames_count):
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_xlim(-4, 5)
-    ax.set_ylim(-14, 1)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True)
     ax.set_title("Animated Rectangle")
@@ -424,8 +435,10 @@ if not frame_files:
 frames = [PIL_Image.open(image) for image in frame_files]
 frame_one = frames[0]
 
+ani_dir = 'final_animation'+str(iteration)+'.gif'
+
 frame_one.save(
-    'final_animation.gif',
+    ani_dir,
     format="GIF",
     append_images=frames[1:],
     save_all=True,
@@ -436,4 +449,4 @@ frame_one.save(
 print("GIF saved successfully.")
 
 # -- Step 3: Display the final GIF --
-Image(filename='final_animation.gif')
+#Image(filename=ani_dir)
